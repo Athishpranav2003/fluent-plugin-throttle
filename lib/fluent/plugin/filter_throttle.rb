@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 require 'fluent/plugin/filter'
+require 'fluent/plugin/prometheus'
 
 module Fluent::Plugin
   class ThrottleFilter < Filter
     Fluent::Plugin.register_filter('throttle', self)
+    include Fluent::Plugin::Prometheus
 
     desc "Used to group logs. Groups are rate limited independently"
     config_param :group_key, :array, :default => ['kubernetes.container_name']
@@ -41,7 +43,13 @@ module Fluent::Plugin
       :aprox_rate,
       :bucket_count,
       :bucket_last_reset,
-      :last_warning)
+      :last_warning,
+      :rate_count_last_exceeded)
+
+    def initialize
+      super
+      @registry = ::Prometheus::Client.registry
+    end
 
     def configure(conf)
       super
@@ -68,12 +76,15 @@ module Fluent::Plugin
 
       raise "group_warning_delay_s must be >= 1" \
         unless @group_warning_delay_s >= 1
+
+      @base_labels = {}
     end
 
     def start
       super
 
       @counters = {}
+      @metrics = {throttle_rate_limit_exceeded: get_counter(:fluentd_throttle_rate_limit_exceeded, "The exceeded rate of pods in the group")}
     end
 
     def shutdown
@@ -85,10 +96,10 @@ module Fluent::Plugin
       now = Time.now
       rate_limit_exceeded = @group_drop_logs ? nil : record # return nil on rate_limit_exceeded to drop the record
       group = extract_group(record)
-      
-      # Ruby hashes are ordered by insertion. 
+
+      # Ruby hashes are ordered by insertion.
       # Deleting and inserting moves the item to the end of the hash (most recently used)
-      counter = @counters[group] = @counters.delete(group) || Group.new(0, now, 0, 0, now, nil)
+      counter = @counters[group] = @counters.delete(group) || Group.new(0, now, 0, 0, now, nil, 0)
 
       counter.rate_count += 1
       since_last_rate_reset = now - counter.rate_last_reset
@@ -96,6 +107,7 @@ module Fluent::Plugin
         # compute and store rate/s at most every second
         counter.aprox_rate = (counter.rate_count / since_last_rate_reset).round()
         counter.rate_count = 0
+        counter.rate_count_last_exceeded = 0
         counter.rate_last_reset = now
       end
 
@@ -151,6 +163,10 @@ module Fluent::Plugin
     end
 
     def log_rate_limit_exceeded(now, group, counter)
+      metric = @metrics[:throttle_rate_limit_exceeded]
+      log.debug("current rate",counter.rate_count,"current metric",metric.get(labels: @base_labels.merge(podname: group)))
+      metric.increment(by: counter.rate_count - counter.rate_count_last_exceeded, labels: @base_labels.merge(podname: group))
+      counter.rate_count_last_exceeded = counter.rate_count
       emit = counter.last_warning == nil ? true \
         : (now - counter.last_warning) >= @group_warning_delay_s
       if emit
@@ -175,6 +191,14 @@ module Fluent::Plugin
        'limit': @group_bucket_limit,
        'rate_limit_s': @group_rate_limit,
        'reset_rate_s': @group_reset_rate_s}
+    end
+
+    def get_counter(name, docstring)
+      if @registry.exist?(name)
+        @registry.get(name)
+      else
+        @registry.counter(name, docstring: docstring, labels: @base_labels.keys + [:podname])
+      end
     end
   end
 end
