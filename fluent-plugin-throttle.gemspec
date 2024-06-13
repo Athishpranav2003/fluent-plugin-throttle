@@ -25,5 +25,6 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "maxitest"
   spec.add_development_dependency "single_cov"
 
+  spec.add_runtime_dependency "prometheus-client", '>= 4.2.2'
   spec.add_runtime_dependency "fluentd", "~> 1.1"
 end

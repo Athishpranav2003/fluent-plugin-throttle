@@ -37,6 +37,11 @@ module Fluent::Plugin
     DESC
     config_param :group_warning_delay_s, :integer, :default => 10
 
+    desc <<~DESC
+      Whether to emit a metric when the rate limit is exceeded. The metric is fluentd_throttle_rate_limit_exceeded
+    DESC
+    config_param :group_emit_metrics, :bool, :default => false
+
     Group = Struct.new(
       :rate_count,
       :rate_last_reset,
@@ -44,7 +49,7 @@ module Fluent::Plugin
       :bucket_count,
       :bucket_last_reset,
       :last_warning,
-      :rate_count_last_exceeded)
+      :rate_count_last)
 
     def initialize
       super
@@ -55,7 +60,8 @@ module Fluent::Plugin
       super
 
       @group_key_paths = group_key.map { |key| key.split(".") }
-
+      @group_key_symbols = (group_key.map {|str| str.gsub(/[^a-zA-Z0-9_]/,'_')}).map(&:to_sym)
+      
       raise "group_bucket_period_s must be > 0" \
         unless @group_bucket_period_s > 0
 
@@ -107,7 +113,7 @@ module Fluent::Plugin
         # compute and store rate/s at most every second
         counter.aprox_rate = (counter.rate_count / since_last_rate_reset).round()
         counter.rate_count = 0
-        counter.rate_count_last_exceeded = 0
+        counter.rate_count_last = 0
         counter.rate_last_reset = now
       end
 
@@ -163,10 +169,15 @@ module Fluent::Plugin
     end
 
     def log_rate_limit_exceeded(now, group, counter)
-      metric = @metrics[:throttle_rate_limit_exceeded]
-      log.debug("current rate",counter.rate_count,"current metric",metric.get(labels: @base_labels.merge(podname: group)))
-      metric.increment(by: counter.rate_count - counter.rate_count_last_exceeded, labels: @base_labels.merge(podname: group))
-      counter.rate_count_last_exceeded = counter.rate_count
+      # Check if metrics are enabled
+      if @group_emit_metrics
+        groupped_label = @group_key_symbols.zip(group).to_h
+        metric = @metrics[:throttle_rate_limit_exceeded]
+        log.debug("current rate",counter.rate_count,"current metric",metric.get(labels: @base_labels.merge(groupped_label)))
+        metric.increment(by: counter.rate_count - counter.rate_count_last, labels: @base_labels.merge(groupped_label))
+        counter.rate_count_last = counter.rate_count
+      end
+
       emit = counter.last_warning == nil ? true \
         : (now - counter.last_warning) >= @group_warning_delay_s
       if emit
@@ -194,10 +205,12 @@ module Fluent::Plugin
     end
 
     def get_counter(name, docstring)
-      if @registry.exist?(name)
-        @registry.get(name)
-      else
-        @registry.counter(name, docstring: docstring, labels: @base_labels.keys + [:podname])
+      if @group_emit_metrics
+        if @registry.exist?(name)
+          @registry.get(name)
+        else
+          @registry.counter(name, docstring: docstring, labels: @base_labels.keys + @group_key_symbols)
+        end
       end
     end
   end

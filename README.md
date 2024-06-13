@@ -129,6 +129,14 @@ When a group reaches its limit and as long as it is not reset, a warning
 message with the current log rate of the group is emitted repeatedly. This is
 the delay between every repetition.
 
+#### group\_emit\_metrics
+
+Default: `false`.
+
+When a group reaches its limit, metrics will be emitted for the logs being dropped if this value is true . This metrics can be scraped like any other metrics emitted in prometheus format. `podname` is a additional label available to identify the throttled groups. \\
+Metrics for the filter is
+- `fluentd_throttle_rate_limit_exceeded`
+
 ## License
 
 Apache License, Version 2.0
