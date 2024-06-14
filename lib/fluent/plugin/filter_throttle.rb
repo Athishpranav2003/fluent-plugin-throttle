@@ -102,6 +102,7 @@ module Fluent::Plugin
       super
 
       @counters = {}
+      # TODO add more relevant metrics to throttling
       @metrics = {throttle_rate_limit_exceeded: get_counter(:fluentd_throttle_rate_limit_exceeded, "The exceeded rate of pods in the group")}
     end
 
@@ -183,6 +184,7 @@ module Fluent::Plugin
     def log_rate_limit_exceeded(now, group, counter)
       # Check if metrics are enabled
       if @group_emit_metrics
+        # We create the new hash of label to label values for the metric
         groupped_label = @group_key_symbols.zip(group).to_h
         metric = @metrics[:throttle_rate_limit_exceeded]
         log.debug("current rate",counter.rate_count,"current metric",metric.get(labels: @base_labels.merge(groupped_label)))
