@@ -50,8 +50,7 @@ module Fluent::Plugin
       :aprox_rate,
       :bucket_count,
       :bucket_last_reset,
-      :last_warning,
-      :rate_count_last)
+      :last_warning)
 
     def initialize
       super
@@ -118,7 +117,7 @@ module Fluent::Plugin
 
       # Ruby hashes are ordered by insertion.
       # Deleting and inserting moves the item to the end of the hash (most recently used)
-      counter = @counters[group] = @counters.delete(group) || Group.new(0, now, 0, 0, now, nil, @group_bucket_limit)
+      counter = @counters[group] = @counters.delete(group) || Group.new(0, now, 0, 0, now, nil)
 
       counter.rate_count += 1
       since_last_rate_reset = now - counter.rate_last_reset
@@ -126,7 +125,6 @@ module Fluent::Plugin
         # compute and store rate/s at most every second
         counter.aprox_rate = (counter.rate_count / since_last_rate_reset).round()
         counter.rate_count = 0
-        counter.rate_count_last = @group_bucket_limit
         counter.rate_last_reset = now
       end
 
@@ -188,8 +186,7 @@ module Fluent::Plugin
         groupped_label = @group_key_symbols.zip(group).to_h
         metric = @metrics[:throttle_rate_limit_exceeded]
         log.debug("current rate",counter.rate_count,"current metric",metric.get(labels: @base_labels.merge(groupped_label)))
-        metric.increment(by: counter.rate_count - counter.rate_count_last, labels: @base_labels.merge(groupped_label))
-        counter.rate_count_last = counter.rate_count
+        metric.increment(by: 1, labels: @base_labels.merge(groupped_label))
       end
 
       emit = counter.last_warning == nil ? true \
