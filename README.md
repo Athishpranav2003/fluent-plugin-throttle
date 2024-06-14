@@ -145,7 +145,7 @@ Metrics for the filter is
 
 See [Prometheus Data Model](http://prometheus.io/docs/concepts/data_model/) first.
 
-You can add labels with static value or dynamic value from records. In `prometheus_monitor` input plugin, you can't use label value from records.
+You can add custom labels with static values
 
 ### labels section
 
