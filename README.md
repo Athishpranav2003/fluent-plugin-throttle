@@ -23,6 +23,10 @@ $ gem install fluent-plugin-throttle
   group_bucket_period_s   60
   group_bucket_limit    6000
   group_reset_rate_s     100
+  <labels>
+    key1 value1
+    key2 value2
+  <labels>
 </filter>
 ```
 
@@ -136,6 +140,31 @@ Default: `false`.
 When a group reaches its limit, metrics will be emitted for the logs being dropped if this value is true . This metrics can be scraped like any other metrics emitted in prometheus format. `podname` is a additional label available to identify the throttled groups. \\
 Metrics for the filter is
 - `fluentd_throttle_rate_limit_exceeded`
+
+## Labels
+
+See [Prometheus Data Model](http://prometheus.io/docs/concepts/data_model/) first.
+
+You can add labels with static value or dynamic value from records. In `prometheus_monitor` input plugin, you can't use label value from records.
+
+### labels section
+
+```
+<labels>
+  key1 value1
+  key2 value2
+</labels>
+```
+
+All labels sections has same format. Each lines have key/value for label.
+
+You can use placeholder for label values. The placeholders will be expanded from reserved values and records.
+If you specify `${hostname}`, it will be expanded by value of a hostname where fluentd runs.
+
+Reserved placeholders are:
+
+- `${hostname}`: hostname
+- `${worker_id}`: fluent worker id
 
 ## License
 

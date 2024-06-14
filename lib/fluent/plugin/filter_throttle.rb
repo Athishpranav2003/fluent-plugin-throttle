@@ -5,6 +5,7 @@ require 'fluent/plugin/prometheus'
 module Fluent::Plugin
   class ThrottleFilter < Filter
     Fluent::Plugin.register_filter('throttle', self)
+    include Fluent::Plugin::PrometheusLabelParser
     include Fluent::Plugin::Prometheus
 
     desc "Used to group logs. Groups are rate limited independently"
@@ -61,7 +62,7 @@ module Fluent::Plugin
 
       @group_key_paths = group_key.map { |key| key.split(".") }
       @group_key_symbols = (group_key.map {|str| str.gsub(/[^a-zA-Z0-9_]/,'_')}).map(&:to_sym)
-      
+
       raise "group_bucket_period_s must be > 0" \
         unless @group_bucket_period_s > 0
 
@@ -83,7 +84,17 @@ module Fluent::Plugin
       raise "group_warning_delay_s must be >= 1" \
         unless @group_warning_delay_s >= 1
 
-      @base_labels = {}
+      hostname = Socket.gethostname
+      expander_builder = Fluent::Plugin::Prometheus.placeholder_expander(log)
+      expander = expander_builder.build({ 'hostname' => hostname, 'worker_id' => fluentd_worker_id })
+      @base_labels = parse_labels_elements(conf)
+      @base_labels.each do |key, value|
+        unless value.is_a?(String)
+          raise Fluent::ConfigError, "record accessor syntax is not available in metric labels for throttle plugin"
+        end
+        @base_labels[key] = expander.expand(value)
+      end
+
     end
 
     def start
