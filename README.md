@@ -137,7 +137,7 @@ the delay between every repetition.
 
 Default: `false`.
 
-When a group reaches its limit, metrics will be emitted for the logs being dropped if this value is true . This metrics can be scraped like any other metrics emitted in prometheus format. `podname` is a additional label available to identify the throttled groups. \\
+When a group reaches its limit, metrics will be emitted for the logs being dropped if this value is true . This metrics can be scraped like any other metrics emitted in prometheus format. Group keys are available to identify the throttled groups as additional labels. \\
 Metrics for the filter is
 - `fluentd_throttle_rate_limit_exceeded`
 
