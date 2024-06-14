@@ -7,6 +7,7 @@ module Fluent::Plugin
     Fluent::Plugin.register_filter('throttle', self)
     include Fluent::Plugin::PrometheusLabelParser
     include Fluent::Plugin::Prometheus
+    attr_reader :registry
 
     desc "Used to group logs. Groups are rate limited independently"
     config_param :group_key, :array, :default => ['kubernetes.container_name']
@@ -116,7 +117,7 @@ module Fluent::Plugin
 
       # Ruby hashes are ordered by insertion.
       # Deleting and inserting moves the item to the end of the hash (most recently used)
-      counter = @counters[group] = @counters.delete(group) || Group.new(0, now, 0, 0, now, nil, 0)
+      counter = @counters[group] = @counters.delete(group) || Group.new(0, now, 0, 0, now, nil, @group_bucket_limit)
 
       counter.rate_count += 1
       since_last_rate_reset = now - counter.rate_last_reset
@@ -124,7 +125,7 @@ module Fluent::Plugin
         # compute and store rate/s at most every second
         counter.aprox_rate = (counter.rate_count / since_last_rate_reset).round()
         counter.rate_count = 0
-        counter.rate_count_last = 0
+        counter.rate_count_last = @group_bucket_limit
         counter.rate_last_reset = now
       end
 

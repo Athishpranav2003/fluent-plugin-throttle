@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 require_relative '../../helper'
 require 'fluent/plugin/filter_throttle'
+require 'fluent/plugin/prometheus'
 
 SingleCov.covered!
 
@@ -177,6 +178,34 @@ describe Fluent::Plugin::ThrottleFilter do
       end
 
       assert driver.logs.any? { |log| log.include?('rate back down') }
+    end
+
+    it 'emit metrics when enabled and rate exceeds - multiple keys' do
+      driver = create_driver <<~CONF
+        group_key "group1,group2"
+        group_bucket_period_s 1
+        group_bucket_limit 5
+        group_emit_metrics true
+      CONF
+
+      driver.run(default_tag: "test") do
+        driver.feed([[event_time, {"msg": "test", "group1": "a", "group2": "b"}]] * 100)
+        driver.feed([[event_time, {"msg": "test", "group1": "b", "group2": "b"}]] * 50)
+        driver.feed([[event_time, {"msg": "test", "group1": "c"}]] * 25)
+        driver.feed([[event_time, {"msg": "test", "group2": "c"}]] * 10)
+      end
+
+      groups = driver.filtered_records.group_by { |r| r[:group1] }
+      groups.each { |k, g| groups[k] = g.group_by { |r| r[:group2] } }
+
+      assert_equal(5, groups["a"]["b"].size)
+      assert_equal(5, groups["b"]["b"].size)
+      assert_equal(5, groups["c"][nil].size)
+      assert_equal(5, groups[nil]["c"].size)
+      assert_equal(95, driver.instance.registry.get(:fluentd_throttle_rate_limit_exceeded).get(labels: {group1: "a", group2: "b"}))
+      assert_equal(45, driver.instance.registry.get(:fluentd_throttle_rate_limit_exceeded).get(labels: {group1: "b", group2: "b"}))
+      assert_equal(20, driver.instance.registry.get(:fluentd_throttle_rate_limit_exceeded).get(labels: {group1: "c", group2: nil}))
+      assert_equal(5, driver.instance.registry.get(:fluentd_throttle_rate_limit_exceeded).get(labels: {group1: nil, group2: "c"}))
     end
   end
 end
