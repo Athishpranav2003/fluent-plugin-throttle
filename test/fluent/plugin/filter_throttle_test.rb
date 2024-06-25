@@ -185,7 +185,7 @@ describe Fluent::Plugin::ThrottleFilter do
         group_key "group1,group2"
         group_bucket_period_s 1
         group_bucket_limit 5
-        group_emit_metrics true
+        enable_metrics true
       CONF
 
       driver.run(default_tag: "test") do

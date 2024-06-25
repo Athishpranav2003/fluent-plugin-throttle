@@ -42,7 +42,7 @@ module Fluent::Plugin
     desc <<~DESC
       Whether to emit a metric when the rate limit is exceeded. The metric is fluentd_throttle_rate_limit_exceeded
     DESC
-    config_param :group_emit_metrics, :bool, :default => false
+    config_param :enable_metrics, :bool, :default => false
 
     Group = Struct.new(
       :rate_count,
@@ -61,6 +61,7 @@ module Fluent::Plugin
       super
 
       @group_key_paths = group_key.map { |key| key.split(".") }
+      # Replace invalid characters with underscores and convert to symbols for valid labels
       @group_key_symbols = (group_key.map {|str| str.gsub(/[^a-zA-Z0-9_]/,'_')}).map(&:to_sym)
 
       raise "group_bucket_period_s must be > 0" \
@@ -84,17 +85,18 @@ module Fluent::Plugin
       raise "group_warning_delay_s must be >= 1" \
         unless @group_warning_delay_s >= 1
 
-      hostname = Socket.gethostname
-      expander_builder = Fluent::Plugin::Prometheus.placeholder_expander(log)
-      expander = expander_builder.build({ 'hostname' => hostname, 'worker_id' => fluentd_worker_id })
-      @base_labels = parse_labels_elements(conf)
-      @base_labels.each do |key, value|
-        unless value.is_a?(String)
-          raise Fluent::ConfigError, "record accessor syntax is not available in metric labels for throttle plugin"
+      if @enable_metrics
+        hostname = Socket.gethostname
+        expander_builder = Fluent::Plugin::Prometheus.placeholder_expander(log)
+        expander = expander_builder.build({ 'hostname' => hostname, 'worker_id' => fluentd_worker_id })
+        @base_labels = parse_labels_elements(conf)
+        @base_labels.each do |key, value|
+          unless value.is_a?(String)
+            raise Fluent::ConfigError, "record accessor syntax is not available in metric labels for throttle plugin"
+          end
+          @base_labels[key] = expander.expand(value)
         end
-        @base_labels[key] = expander.expand(value)
       end
-
     end
 
     def start
@@ -181,7 +183,7 @@ module Fluent::Plugin
 
     def log_rate_limit_exceeded(now, group, counter)
       # Check if metrics are enabled
-      if @group_emit_metrics
+      if @enable_metrics
         # We create the new hash of label to label values for the metric
         groupped_label = @group_key_symbols.zip(group).to_h
         metric = @metrics[:throttle_rate_limit_exceeded]
@@ -216,7 +218,7 @@ module Fluent::Plugin
     end
 
     def get_counter(name, docstring)
-      if @group_emit_metrics
+      if @enable_metrics
         if @registry.exist?(name)
           @registry.get(name)
         else

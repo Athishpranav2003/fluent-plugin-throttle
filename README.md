@@ -133,7 +133,7 @@ When a group reaches its limit and as long as it is not reset, a warning
 message with the current log rate of the group is emitted repeatedly. This is
 the delay between every repetition.
 
-#### group\_emit\_metrics
+#### enable\_metrics
 
 Default: `false`.
 
